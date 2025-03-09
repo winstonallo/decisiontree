@@ -29,10 +29,10 @@ impl DecisionTree {
             Some(x[0].len().min(self.n_features.unwrap()))
         };
 
-        self.root = self.grow_tree(x, y, 0);
+        self.root = self.grow(x, y, 0);
     }
 
-    fn grow_tree(&mut self, x: Vec<Vec<f64>>, y: Vec<f64>, depth: usize) -> Option<Node> {
+    fn grow(&mut self, x: Vec<Vec<f64>>, y: Vec<f64>, depth: usize) -> Option<Node> {
         let (n_samples, n_features) = (x.len(), x[0].len());
         let n_labels = {
             let mut y0 = y.clone();
