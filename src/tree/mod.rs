@@ -22,7 +22,7 @@ impl DecisionTree {
         }
     }
 
-    pub fn fit(&mut self, x: Vec<Vec<f64>>, y: Vec<f64>) {
+    pub fn fit(&mut self, x: Vec<Vec<OrderedFloat<f64>>>, y: Vec<OrderedFloat<f64>>) {
         self.n_features = if self.n_features.is_none() {
             Some(x[0].len())
         } else {
@@ -32,11 +32,16 @@ impl DecisionTree {
         self.root = self.grow(x, y, 0);
     }
 
-    fn grow(&mut self, x: Vec<Vec<f64>>, y: Vec<f64>, depth: usize) -> Option<Node> {
+    fn grow(
+        &mut self,
+        x: Vec<Vec<OrderedFloat<f64>>>,
+        y: Vec<OrderedFloat<f64>>,
+        depth: usize,
+    ) -> Option<Node> {
         let (n_samples, n_features) = (x.len(), x[0].len());
         let n_labels = {
             let mut y0 = y.clone();
-            y0.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            y0.sort();
             y0.dedup();
             y0.len()
         };
@@ -48,10 +53,10 @@ impl DecisionTree {
         None
     }
 
-    fn leaf_value(&self, y: Vec<f64>) -> OrderedFloat<f64> {
+    fn leaf_value(&self, y: Vec<OrderedFloat<f64>>) -> OrderedFloat<f64> {
         y.into_iter()
             .fold(HashMap::<OrderedFloat<f64>, usize>::new(), |mut m, x| {
-                *m.entry(OrderedFloat(x)).or_default() += 1;
+                *m.entry(x).or_default() += 1;
                 m
             })
             .into_iter()
