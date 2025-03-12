@@ -32,12 +32,7 @@ impl DecisionTree {
         self.root = self.grow(x, y, 0);
     }
 
-    fn grow(
-        &mut self,
-        x: Vec<Vec<OrderedFloat<f64>>>,
-        y: Vec<OrderedFloat<f64>>,
-        depth: usize,
-    ) -> Option<Node> {
+    fn grow(&mut self, x: Vec<Vec<OrderedFloat<f64>>>, y: Vec<OrderedFloat<f64>>, depth: usize) -> Option<Node> {
         let (n_samples, n_features) = (x.len(), x[0].len());
         let n_labels = {
             let mut y0 = y.clone();
@@ -47,7 +42,7 @@ impl DecisionTree {
         };
 
         if depth >= self.max_depth || n_labels == 1 || n_samples < self.min_samples_split {
-            return Some(Node::new(None, None, None, None, Some(self.leaf_value(y))));
+            return Some(Node::from_value(self.leaf_value(y)));
         }
 
         None

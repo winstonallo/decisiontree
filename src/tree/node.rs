@@ -25,6 +25,16 @@ impl Node {
         }
     }
 
+    pub fn from_value(value: OrderedFloat<f64>) -> Self {
+        Self {
+            feature: None,
+            threshold: None,
+            left: None,
+            right: None,
+            value: Some(value),
+        }
+    }
+
     pub fn is_leaf(&self) -> bool {
         self.value.is_some()
     }
