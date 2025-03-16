@@ -16,11 +16,13 @@ pub struct Tree {
     class_values: Vec<Float64>,
 }
 
+#[derive(Debug)]
 enum Node {
     Leaf(Leaf),
     Branch(Branch),
 }
 
+#[derive(Debug)]
 struct Leaf {
     prediction: ClassIndex,
 }
@@ -31,6 +33,7 @@ impl Leaf {
     }
 }
 
+#[derive(Debug)]
 #[allow(unused)]
 struct Branch {
     feature: FeatureIndex,
@@ -95,6 +98,8 @@ impl Y {
 
         let n_classes = unique_values.len();
 
+        println!("n_classes: {}", n_classes);
+
         Self {
             datapoints,
             n_classes,
@@ -109,8 +114,11 @@ impl Y {
     pub fn class_counts(&self, indices: &[usize]) -> Vec<usize> {
         let mut counts = vec![0; self.n_classes];
         for &idx in indices {
-            counts[self.datapoints[idx]] += 1;
+            let class = self.datapoints[idx]; // Get the class for the current index
+            counts[class] += 1; // Increment the count for that class
         }
+        println!("{}", self.datapoints.len());
+        println!("indices: {:?}, class_counts: {:?}", indices, counts);
         counts
     }
 
@@ -156,15 +164,21 @@ fn weighted_gini_impurity(left_counts: &[usize], right_counts: &[usize]) -> Floa
     (left_weight * left_impurity.into_inner() + right_weight * right_impurity.into_inner()).into()
 }
 
-fn get_best_threshold(feature: &Vec<Float64>, target: &Y) -> (Threshold, Float64) {
-    let mut combined = feature
+fn get_best_threshold(
+    sample_idx: usize,
+    samples: &[Vec<Float64>],
+    target: &Y,
+) -> (Threshold, Float64) {
+    let feature_values: Vec<(usize, Float64)> = samples
         .iter()
         .enumerate()
-        .collect::<Vec<(usize, &Float64)>>();
+        .map(|(i, sample)| (i, sample[sample_idx]))
+        .collect();
 
-    combined.sort_by(|a, b| a.1.cmp(&b.1));
+    let mut sorted_indices = feature_values;
+    sorted_indices.sort_by(|a, b| a.1.cmp(&b.1));
 
-    let n_samples = combined.len();
+    let n_samples = sorted_indices.len();
     let all_indices: Vec<usize> = (0..n_samples).collect();
     let all_counts = target.class_counts(&all_indices);
     let all_gini = gini_impurity(&all_counts, n_samples);
@@ -173,10 +187,18 @@ fn get_best_threshold(feature: &Vec<Float64>, target: &Y) -> (Threshold, Float64
     let mut best_gain = Float64::from(0.0);
 
     for i in 0..n_samples - 1 {
-        let threshold = (combined[i].1 + combined[i + 1].1) / 2.0;
+        let threshold = (sorted_indices[i].1 + sorted_indices[i + 1].1) / 2.0;
 
-        let left_indices: Vec<usize> = combined.iter().take(i + 1).map(|(i, _)| *i).collect();
-        let right_indices: Vec<usize> = combined.iter().skip(i + 1).map(|(i, _)| *i).collect();
+        let left_indices: Vec<usize> = sorted_indices
+            .iter()
+            .take(i + 1)
+            .map(|(idx, _)| *idx)
+            .collect();
+        let right_indices: Vec<usize> = sorted_indices
+            .iter()
+            .skip(i + 1)
+            .map(|(idx, _)| *idx)
+            .collect();
 
         let left_counts = target.class_counts(&left_indices);
         let right_counts = target.class_counts(&right_indices);
@@ -189,7 +211,7 @@ fn get_best_threshold(feature: &Vec<Float64>, target: &Y) -> (Threshold, Float64
             best_threshold = threshold;
         }
     }
-
+    println!("feature: {sample_idx}, best_threshold: {best_threshold}, best_gain: {best_gain}");
     (best_threshold, best_gain)
 }
 
@@ -204,6 +226,7 @@ impl Tree {
     }
 
     fn push(&mut self, node: Node) -> NodeIndex {
+        println!("{:?}", node);
         self.nodes.push(node);
         self.nodes.len() - 1
     }
@@ -216,9 +239,13 @@ impl Tree {
         self.root = self.grow(&features, target, &sample_indices, 0, max_depth)
     }
 
+    fn is_pure_node(class_counts: &[usize]) -> bool {
+        class_counts.iter().filter(|&&count| count > 0).count() <= 1
+    }
+
     fn grow(
         &mut self,
-        features: &[Vec<Float64>],
+        samples: &[Vec<Float64>],
         target: &Y,
         indices: &[usize],
         depth: usize,
@@ -229,10 +256,8 @@ impl Tree {
         let class_counts = target.class_counts(indices);
         let majority_class = target.majority_class(indices);
 
-        if depth >= max_depth
-            || class_counts.iter().filter(|&&count| count > 0).count() <= 1
-            || n_samples < 2
-        {
+        if depth >= max_depth || n_samples < 2 || Tree::is_pure_node(&class_counts) {
+            println!("HERE: depth: {depth}, n_samples: {n_samples}");
             let leaf = Node::Leaf(Leaf::new(majority_class));
             return self.push(leaf);
         }
@@ -241,8 +266,19 @@ impl Tree {
         let mut best_threshold = Float64::from(0);
         let mut best_gain = Float64::from(0);
 
-        for (feature_idx, feature) in features.iter().enumerate() {
-            let (threshold, gain) = get_best_threshold(feature, target);
+        let n_features = samples[0].len();
+
+        for feature_idx in 0..n_features {
+            let (threshold, gain) = get_best_threshold(
+                feature_idx,
+                &samples
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| indices.contains(i))
+                    .map(|(_, sample)| sample.clone())
+                    .collect::<Vec<_>>(),
+                target,
+            );
 
             if gain > best_gain {
                 best_gain = gain;
@@ -251,17 +287,16 @@ impl Tree {
             }
         }
 
-        if best_gain <= Float64::from(0) {
+        if best_gain <= Float64::from(1e-5) {
             let leaf = Node::Leaf(Leaf::new(majority_class));
             return self.push(leaf);
         }
 
-        let best_feature = &features[best_feature_idx];
         let mut left_indices = Vec::new();
         let mut right_indices = Vec::new();
 
         for &idx in indices {
-            if best_feature[idx] < best_threshold {
+            if samples[idx][best_feature_idx] < best_threshold {
                 left_indices.push(idx);
             } else {
                 right_indices.push(idx);
@@ -273,8 +308,18 @@ impl Tree {
             return self.push(leaf);
         }
 
-        let left = self.grow(features, target, &left_indices, depth + 1, max_depth);
-        let right = self.grow(features, target, &right_indices, depth + 1, max_depth);
+        println!(
+            "left_indices: {:?}, right_indices: {:?}",
+            left_indices, right_indices
+        );
+
+        let left_counts = target.class_counts(&left_indices);
+        let right_counts = target.class_counts(&right_indices);
+        println!("Left Class Counts: {:?}", left_counts);
+        println!("Right Class Counts: {:?}", right_counts);
+
+        let left = self.grow(samples, target, &left_indices, depth + 1, max_depth);
+        let right = self.grow(samples, target, &right_indices, depth + 1, max_depth);
 
         let branch = Node::Branch(Branch::new(
             best_feature_idx,
