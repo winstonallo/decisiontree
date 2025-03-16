@@ -1,1 +1,1 @@
-mod tree;
+pub mod tree;
